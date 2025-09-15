@@ -1200,7 +1200,7 @@ class Tool(object):
 
                 buffered_cell = os.path.join(output_folder, f"buffered_cell_{id_val}.shp")
                 arcpy.PairwiseBuffer_analysis(single_cell, buffered_cell, "1000 Meters", dissolve_option="ALL")
-                cell_buffers.append((id_val, buffered_cell))
+                cell_buffers.append((id_val, single_cell, buffered_cell))
 
         # Step 6: Clip, buffer, then extract by mask
         for id_val, buffered_cell in cell_buffers:
