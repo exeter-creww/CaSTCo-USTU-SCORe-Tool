@@ -10,8 +10,8 @@ arcpy.CheckOutExtension("Spatial")
 class Toolbox(object):
     def __init__(self):
         """Define the toolbox (the name of the toolbox is the name of the .pyt file)."""
-        self.label = "Area For NbS"
-        self.alias = "areafornbs"
+        self.label = "SCORe Tool"
+        self.alias = "scoretool"
         self.tools = [SelectImpermeableAreaByAttributesTool, AddHighwaysDataOrRiverToDEMTool, PourPointTool, AreaForNatureBasedSolutionsDinf, AreaForNatureBasedSolutionsD8, Tool]  # list of tool classes
 
 # Tool 1: Select Impermeable Area By Attributes Tool
