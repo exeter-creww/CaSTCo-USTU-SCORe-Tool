@@ -5,6 +5,7 @@
 # Create temporary root
 temp_root <- tcltk::tktoplevel()
 
+
 # Hide the root window to avoid extra visible windows
 tcltk::tkwm.withdraw(temp_root)
 
@@ -99,7 +100,7 @@ dlgMessage("The Whitebox package has been successfully installed.", type = "ok")
 dlgMessage("The working directory is where R will look for and save files during this session,
     You can use the default (your home directory) or specify another location.", type = "ok")
 
-working_directory <- rstudioapi::selectDirectory(caption = "Set up the working directory (default is your home directory)")
+working_directory <- rstudioapi::selectDirectory(caption = "Set up the working directory")
 
 # Check if the user provided a working directory, otherwise set the temp directory as default
 if (is.null(working_directory) || working_directory == "") {
@@ -116,11 +117,13 @@ setwd(working_directory)
 
 ### set up temp folder ###
 temp_dir <- tempdir()
+default_dir <- getwd()
 
 ### Prompt user for key layers ###
 # Prompt the user to select the DSM layer file
 dlgMessage("Digital elevation model (DEM) data will need to be provided. It is recomended that a digital surface modal (DSM) is used. The data can be freely downloaded from https://environment.data.gov.uk/survey", 
            type = "ok")
+
 
 #######################################Inputs added########################################################
 #### DEM input ####
@@ -129,7 +132,8 @@ repeat {
   # Open file selection popup
   user_DSM <- rstudioapi::selectFile(
     caption = "Please select the DSM layer file (e.g., C:/path/to/your/file.tif)", 
-    filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff"
+    filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff",
+    path    = getwd()
   )
   
   # Check if the user cancels the dialog
@@ -158,7 +162,8 @@ repeat {
   # Open file selection popup
   user_river <- rstudioapi::selectFile(
     caption = "Please select the river network layer file (e.g., C:/path/to/your/file.shp)",
-    filter = "Shapefiles (*.shp)|*.shp"
+    filter = "Shapefiles (*.shp)|*.shp",
+    path    = getwd()
   )
   
   # Check if the user cancels the dialog
@@ -187,7 +192,8 @@ repeat {
   # Open file selection popup
   user_IAS <- rstudioapi::selectFile(
     caption = "Please select the Sewer Drainage Data file (e.g., C:/path/to/your/file.shp)",
-    filter = "Shapefiles (*.shp)|*.shp"
+    filter = "Shapefiles (*.shp)|*.shp",
+    path    = getwd()
   )
   
   # Check if the user cancels the dialog
@@ -221,613 +227,385 @@ dlgMessage("The layers have been installed successfully.", type = "ok")
 dlgMessage("The River Network data will be used to create a barrier in the DSM. This data will ensure only areas draining to the sewer network are provided.", 
            type = "ok")
 
-# Define the new shapefile path
-new_shapefile_path <- file.path(temp_dir, "copy_of_river.shp")
-
-# Write the shapefile to the temporary directory
-terra::writeVector(River_original, new_shapefile_path, overwrite = TRUE) #overwrite = TRUE allows files to be over written 
-
-# Read the copied shapefile
-copied_shapefile <- terra::vect(new_shapefile_path)
-
-# Add a new field called 'new_field' and populate it with 10000
-copied_shapefile$new_field <- 10000
-
-# Write the updated shapefile back to the temporary directory
-terra::writeVector(copied_shapefile, new_shapefile_path, overwrite = TRUE)
-
-#read in river network with new field 
-river_net1 <- terra::vect(new_shapefile_path)
-
-# Check if CRS is the same, and transform polyline if necessary
-if (terra::crs(river_net1) != terra::crs(DSM_original)) {
-  river_net2 <- terra::project(river_net1, terra::crs(DSM_original))
-} else {
-  river_net2 <- river_net1
-} 
-
-# Use the base raster as a template for resolution and extent
-rasterized_river_net <- terra::rasterize(river_net2, DSM_original, field = "new_field")  
-
-## set up prompt for save location ##
-# Default suggestion for file output location
-default_output <- file.path(tempdir(), "rasterized_river_network.tif")
-# Set a default output file path
-default_output <- file.path(Sys.getenv("HOME"), "rasterized_river_network.tif")
-
-# Start a repeat loop to ensure a valid save location
 repeat {
-  # Open a file save dialog using rstudioapi
-  save_ras_river <- rstudioapi::selectFile(
-    caption = paste(
-      "Specify the save location and file name for the rasterized river network.",
-      "\nIt must include .tif at the end of the file name.",
-      "\n(Default suggestion:", default_output, ")"
-    ),
-    path = default_output,  # Provide a default suggestion
-    label = "Save As",
-    existing = FALSE,        # Allow creating a new file
-    filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff" # only allow tifs to be viable
+  # Display the message box and set focus to make it appear in front
+  tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+  skip_rivers <- tcltk::tkmessageBox(
+    title = "Skip Section",
+    message = "Do you want to skip using the River network to create a barrier in the DEM?",
+    type = "yesno",
+    icon = "question"
   )
   
-  # Check if the user cancels the dialog
-  if (is.null(save_ras_river) || save_ras_river == "") {
-    stop("Operation aborted by the user. No save location selected.")
-  } else if (grepl("\\.tif$", save_ras_river, ignore.case = TRUE)) {
-    # If the file name ends with '.tif', exit the loop
-    rstudioapi::showDialog("File Selected", paste("File will be saved to:\n", save_ras_river))
-    break
+  if (tolower(as.character(skip_rivers)) == "yes") {
+    # Display the message box and set focus to make it appear in front
+    tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+    confirm_skip <- tcltk::tkmessageBox(
+      title = "Confirm Skip",
+      message = "You selected to skip adding the River network to the DEM.\nPress OK to confirm skipping or Cancel to go back.",
+      type = "okcancel",
+      icon = "warning"
+    )
+    
+    if (tolower(as.character(confirm_skip)) == "ok") {
+      DSM_minus_rivers <- DSM_original
+      # Display the message box and set focus to make it appear in front
+      tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+      tcltk::tkmessageBox(
+        title = "Add River to DEM Skipped",
+        message = "Adding the River network to the DEM has been skipped.",
+        icon = "info",
+        type = "ok"
+      )
+      break
+    } else {
+      next
+    }
   } else {
-    # If the file name does not end with '.tif', show a warning
-    rstudioapi::showDialog("Invalid Input", "Invalid input. Please ensure the file name ends with '.tif'.")
+    # Display the message box and set focus to make it appear in front
+    tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+    tcltk::tkmessageBox(
+      title = "River network and DEM Edit",
+      message = "The River Network data will be used to create a barrier in the DSM.",
+      icon = "info",
+      type = "ok"
+    )
+    
+    # Prepare river shapefile
+    new_shapefile_path <- file.path(temp_dir, "copy_of_river.gpkg")
+    terra::writeVector(River_original, new_shapefile_path, filetype = "GPKG", overwrite = TRUE)
+    copied_shapefile <- terra::vect(new_shapefile_path)
+    
+    copied_shapefile$new_field <- 10000
+    terra::writeVector(copied_shapefile, new_shapefile_path, filetype = "GPKG", overwrite = TRUE)
+    
+    river_net1 <- terra::vect(new_shapefile_path)
+    
+    # Check CRS
+    if (terra::crs(river_net1) != terra::crs(DSM_original)) {
+      river_net2 <- terra::project(river_net1, terra::crs(DSM_original))
+    } else {
+      river_net2 <- river_net1
+    }
+    
+    rasterized_river_net <- terra::rasterize(river_net2, DSM_original, field = "new_field")
+    
+    ## set up prompt for save location ##
+    # Default suggestion for file output location
+    #default_output <- file.path(tempdir(), "rasterized_river_network.tif")
+    # Set a default output file path
+    default_output <- file.path(default_dir, "rasterized_river_network.tif")
+    
+    # Start a repeat loop to ensure a valid save location
+    repeat {
+      # Open a file save dialog using rstudioapi
+      save_ras_river <- rstudioapi::selectFile(
+        caption = paste(
+          "Specify the save location and file name for the rasterized river network.",
+          "\nIt must include .tif at the end of the file name.",
+          "\n(Default suggestion:", default_output, ")"
+        ),
+        path = default_output,  # Provide a default suggestion
+        label = "Save As",
+        existing = FALSE,        # Allow creating a new file
+        filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff" # only allow tifs to be viable
+      )
+      
+      # Check if the user cancels the dialog
+      if (is.null(save_ras_river) || save_ras_river == "") {
+        stop("Operation aborted by the user. No save location selected.")
+      } else if (grepl("\\.tif$", save_ras_river, ignore.case = TRUE)) {
+        # If the file name ends with '.tif', exit the loop
+        rstudioapi::showDialog("File Selected", paste("File will be saved to:\n", save_ras_river))
+        break
+      } else {
+        # If the file name does not end with '.tif', show a warning
+        rstudioapi::showDialog("Invalid Input", "Invalid input. Please ensure the file name ends with '.tif'.")
+      }
+    }
+    
+    
+    # Burn into DSM
+    DSM_minus_rivers <- terra::mosaic(DSM_original, rasterized_river_net, fun = "last")
+    
+    #tcltk::tkmessageBox(
+     # title = "River and DEM Edit Complete",
+     # message = "Editing the DSM has been completed successfully.",
+     # icon = "info",
+     # type = "ok"
+    #)
+    
+    
+    #print("Rivers removed from DSM completed successfully")
+    dlgMessage("River removal from the DSM has been completed successfully.", type = "ok")
+    break
   }
 }
 
-# Optionally, save the rasterized result
-terra::writeRaster(rasterized_river_net, save_ras_river, overwrite = TRUE)
-
-# Load the saved raster into DSM_minus_rivers_highways
-DSM_minus_rivers <- terra::rast(save_ras_river)
-
-#print("Rivers removed from DSM completed successfully")
-dlgMessage("River removal from the DSM has been completed successfully.", type = "ok")
 
 #########################################################################################################################################################################
 
-### Add the highways data to the DSM ###
+##### Add the highways data to the DSM #####
 
 # The user is prompted for the River network layer
 dlgMessage("The user will need to select the sewer drainage data which is not related to the combined sewer network. This data will ensure only areas draining to the combined sewer network are provided.", 
            type = "ok")
 
-# Step 0: Prompt user to decide if they want to skip this section
 repeat {
-  # Prompt to ask if the user wants to skip
-  skip_highways_section <- showPrompt(
+  tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+  skip_highways <- tcltk::tkmessageBox(
     title = "Skip Section",
-    message = "Do you want to skip the section for adding drainage data not draining to the combined network to the DSM?\nType 'Yes' to skip or 'No' to proceed.",
-    default = "No"
+    message = "Do you want to skip the section for adding drainage data not draining to the combined network to the DSM?",
+    type = "yesno",
+    icon = "question"
   )
   
-  if (tolower(skip_highways_section) == "yes") {  # User chose "Yes" (to skip)
-    # Ask for confirmation
-    confirm_skip <- showPrompt(
+  if (tolower(as.character(skip_highways)) == "yes") {
+    tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+    confirm_skip <- tcltk::tkmessageBox(
       title = "Confirm Skip",
-      message = "You selected to skip the section for adding drainage data not draining to the combined network to the DSM.\nType 'Yes' to confirm skipping or 'No' to return.",
-      default = "Yes"
+      message = "You selected to skip the section for adding drainage data not draining to the combined network to the DSM.\nPress OK to confirm skipping or Cancel to go back.",
+      type = "okcancel",
+      icon = "warning"
     )
     
-    if (tolower(confirm_skip) == "yes") {  # User confirmed skipping
-      showDialog(
+    if (tolower(as.character(confirm_skip)) == "ok") {
+      DSM_minus_rivers_highways <- DSM_minus_rivers
+      tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+      tcltk::tkmessageBox(
         title = "Section Skipped",
-        message = "The section for adding drainage data not draining to the combined network to the DSM has been skipped. Moving to the next step."
+        message = "The section for adding drainage data not draining to the combined network to the DSM has been skipped. Moving to the next step.",
+        icon = "info",
+        type = "ok"
       )
-      break  # Exit the loop and skip the section
-    } else {  # User does not confirm skipping
-      showDialog(
-        title = "Return to Skip Prompt",
-        message = "Returning to the previous prompt for selection."
-      )
-      next  # Restart the loop to re-prompt for skipping
+      break
+    } else {
+      next
     }
-  } else if (tolower(skip_highways_section) == "no") {  # User chose "No" (to proceed with the section)
-    showDialog(
-      title = "Proceeding",
-      message = "You have chosen to run the section for adding drainage data not draining to the combined network to the DSM."
+  } else {
+    tcltk::tcl("wm", "attributes", ".", "-topmost", 1)  # Force topmost attribute for RStudio
+    tcltk::tkmessageBox(
+      title = "Run Section and select attributes",
+      message = "Select the attribute and values from the sewer drainage data not related to the combined sewer network.",
+      icon = "info",
+      type = "ok"
     )
     
-    # Place the full code for the section here
-    ### Add the drainage data not draining to the combined network to the DSM ###
-    # Step 1: Define the new shapefile path
-    new_shapefile_path2 <- file.path(tempdir(), "copy_of_IAS1.shp")
-    
-    # Write the shapefile to the temporary directory
-    terra::writeVector(IAS_original, new_shapefile_path2, overwrite = TRUE) #overwrite = TRUE allows files to be overwritten 
+    # Copy highways shapefile
+    new_shapefile_path2 <- file.path(tempdir(), "copy_of_IAS1.gpkg")
+    terra::writeVector(IAS_original, new_shapefile_path2, filetype = "GPKG", overwrite = TRUE)
     copied_IAS1 <- st_read(new_shapefile_path2)
-    
     IAS_sf <- st_as_sf(copied_IAS1)
+    input_vector <- terra::vect(IAS_sf)
     
-    input_vector <- tryCatch({
-      terra::vect(IAS_sf)
-    }, error = function(e) {
-      stop("Failed to load the shapefile. Please ensure the file is a valid shapefile.")
-    })
-    
-    # Step 2: Extract attribute names from the shapefile
+    # Attribute selection
     attribute_options <- colnames(as.data.frame(input_vector))
+    selected_attribute <- tcltk::tk_select.list(attribute_options, multiple = FALSE, title = "Select Attribute")
+    if (length(selected_attribute) == 0 || selected_attribute == "") stop("No attribute selected. Operation aborted.")
     
-    attribute_options_with_index <- paste(1:length(attribute_options), attribute_options, sep = ": ")
-    
-    repeat {
-      selected_index <- showPrompt(
-        title = "Select an Attribute by Number", 
-        message = paste("Available attributes:\n", paste(attribute_options_with_index, collapse = "\n"),
-                        "\nPlease enter the number corresponding to your choice."),
-        default = "1"  # Suggest the first attribute as the default
-      )
-      
-      selected_index <- as.numeric(selected_index)
-      
-      if (!is.na(selected_index) && selected_index >= 1 && selected_index <= length(attribute_options)) {
-        selected_attribute <- attribute_options[selected_index]  # Get the selected attribute by index
-        confirm_selection <- showPrompt(
-          title = "Confirm Selection",
-          message = paste("You selected the attribute:\n", selected_attribute, 
-                          "\nType 'Yes' to confirm, or 'No' to go back and reselect."),
-          default = "Yes"
-        )
-        
-        if (tolower(confirm_selection) == "yes") {
-          showDialog(
-            title = "Attribute Selected", 
-            message = paste("You have confirmed the selection of the attribute:\n", selected_attribute)
-          )
-          break  # Exit the loop if confirmed
-        } else if (tolower(confirm_selection) == "no") {
-          showDialog(
-            title = "Selection Cancelled", 
-            message = "Please reselect an attribute."
-          )
-        } else {
-          showDialog(
-            title = "Invalid Input", 
-            message = "Invalid input. Please type 'Yes' to confirm or 'No' to cancel."
-          )
-        }
-      } else {
-        showDialog(
-          title = "Invalid Selection", 
-          message = "The entered number is not valid. Please try again."
-        )
-      }
-    }
-    # Step 4: Extract the unique values from the selected attribute
+    # Value selection
     unique_values <- unique(as.data.frame(input_vector)[[selected_attribute]])
+    selected_values <- tcltk::tk_select.list(unique_values, multiple = TRUE, title = paste("Select Values for", selected_attribute))
+    if (length(selected_values) == 0) stop("No values selected. Operation aborted.")
     
-    # Step 5: Display the unique values and allow the user to select one or more values
-    values_with_index <- paste(1:length(unique_values), unique_values, sep = ": ")
-    repeat {
-      selected_values_input <- showPrompt(
-        title = "Select Values by Number", 
-        message = paste("Available values for attribute", selected_attribute, ":\n", 
-                        paste(values_with_index, collapse = "\n"),
-                        "\nPlease enter the numbers corresponding to the values you want to select (comma-separated e.g. 1, 2, 3)."),
-        default = "1"  # Suggest the first value as the default
-      )
-      
-      selected_values_indices <- as.numeric(unlist(strsplit(selected_values_input, ",")))
-      if (all(!is.na(selected_values_indices) & selected_values_indices >= 1 & selected_values_indices <= length(unique_values))) {
-        selected_values <- unique_values[selected_values_indices]
-        
-        confirm_values <- showPrompt(
-          title = "Confirm Selected Values",
-          message = paste("You selected the following values:\n", paste(selected_values, collapse = ", "),
-                          "\nType 'Yes' to confirm, or 'No' to go back and reselect."),
-          default = "Yes"
-        )
-        
-        if (tolower(confirm_values) == "yes") {
-          showDialog(
-            title = "Values Selected", 
-            message = paste("You have confirmed the selection of the values:\n", paste(selected_values, collapse = ", "))
-          )
-          break  # Exit the loop if confirmed
-        } else if (tolower(confirm_values) == "no") {
-          showDialog(
-            title = "Selection Cancelled", 
-            message = "Please reselect values."
-          )
-        } else {
-          showDialog(
-            title = "Invalid Input", 
-            message = "Invalid input. Please type 'Yes' to confirm or 'No' to cancel."
-          )
-        }
-      } else {
-        showDialog(
-          title = "Invalid Selection", 
-          message = "The entered numbers are not valid. Please try again."
-        )
-      }
-    }
-    
-    # Step 6: Filter the shapefile based on the selected values
-    # --- Safe filtering ---
+    # Filter shapefile
     IAS_highways_sf <- copied_IAS1 %>%
       filter(as.character(.data[[selected_attribute]]) %in% as.character(selected_values))
+    if (nrow(IAS_highways_sf) == 0) stop("No features found for selected attribute/values.")
     
-    # Check for empty result
-    if (nrow(IAS_highways_sf) == 0) {
-      stop(paste0("No features found in sewer drainage layer for ", selected_attribute, " = ",
-                  paste(selected_values, collapse = ", "),
-                  ". Please select a value that exists within the DSM extent."))
-    }
-    
-    # Convert to terra object
     IAS_highways_filtered <- terra::vect(IAS_highways_sf)
-    
-    # Reproject to DSM CRS if needed
     if (terra::crs(IAS_highways_filtered) != terra::crs(DSM_original)) {
       IAS_highways_filtered <- terra::project(IAS_highways_filtered, terra::crs(DSM_original))
     }
     
-    # Check for spatial overlap
-    if (is.null(terra::intersect(terra::ext(IAS_highways_filtered), terra::ext(DSM_original)))) {
-      stop("The selected sewer drainage layer features do not overlap the DSM extent.")
-    }
-    
-    # Auto-detect geometry type and optionally buffer
+    # Buffer if needed
     geom_type <- tolower(unique(terra::geomtype(IAS_highways_filtered))[1])
     
-    if (geom_type %in% c("polygons")) {
-      dlgMessage("Polygon geometry detected — skipping buffering step.", type = "ok")
-    } else if (geom_type %in% c("lines", "points")) {
-      buffer_choice <- tolower(showPrompt(
-        title = "Buffer Option",
-        message = paste0("The sewer drainage layer contains ", geom_type, 
-                         ". Do you want to apply a buffer before rasterizing? (Yes/No)"),
-        default = "Yes"
-      ))
+    if (geom_type %in% c("lines", "points")) {
+      
+      buffer_choice <- tolower(svDialogs::dlgMessage(
+        paste0("The Sewer Drainage data layer contains ", geom_type, 
+               ". Do you want to apply a buffer before rasterizing?"),
+        type = "yesno"
+      )$res)
       
       if (buffer_choice == "yes") {
-        buffer_input <- as.numeric(dlgInput(
+        
+        buffer_input <- as.numeric(svDialogs::dlgInput(
           paste0("Enter buffer distance in map units (default = 3):"),
           default = "3"
         )$res)
         
-        if (is.na(buffer_input) || buffer_input <= 0) {
-          buffer_input <- 3
-        }
+        if (is.na(buffer_input) || buffer_input <= 0) buffer_input <- 3
         
         IAS_highways_filtered <- terra::buffer(IAS_highways_filtered, width = buffer_input)
-        dlgMessage(paste("Buffered", geom_type, "by", buffer_input, "map units."), type = "ok")
+        svDialogs::dlgMessage(
+          paste("Buffered", geom_type, "by", buffer_input, "map units."),
+          type = "ok"
+        )
+        
       } else {
-        dlgMessage("No buffer applied.", type = "ok")
+        svDialogs::dlgMessage("No buffer applied.", type = "ok")
       }
-    } else {
-      dlgMessage(paste("Unknown geometry type detected:", geom_type, "- proceeding without buffer."), type = "ok")
-    }
-    
-    
-    
-    # Add a new field called 'new_field' and populate it with 10000
-    IAS_highways_filtered$new_field <- 10000
-    
-    # Rasterize to DSM grid with NA background
-    DSM_extent <- terra::rast(DSM_original)
-    rasterized_highways_net <- terra::rasterize(IAS_highways_filtered, DSM_extent,
-                                                field = "new_field", background = NA)
-    
-    
-    # Step 7: Write filtered shapefile
-    new_shapefile_path3 <- file.path(tempdir(), "filtered_IAS_highways.shp")
-    terra::writeVector(IAS_highways_filtered, new_shapefile_path3, overwrite = TRUE)
-    
-    # Add a new field called 'new_field' and populate it with 1
-    IAS_highways_filtered$new_field <- 10000
-    
-    # Write the updated shapefile back to the temporary directory
-    new_shapefile_path4 <- file.path(tempdir(), "highways_IAS2.shp")
-    terra::writeVector(IAS_highways_filtered, new_shapefile_path4, overwrite = TRUE)
-    
-    # Step 8: Check if CRS is the same, and transform polygon if necessary
-    if (terra::crs(IAS_highways_filtered) != terra::crs(DSM_original)) {
-      IAS_highways_CRS <- terra::project(IAS_highways_filtered, terra::crs(DSM_original))
-    } else {
-      IAS_highways_CRS <- IAS_highways_filtered
-    }
-    
-    # Check for spatial overlap
-    if (is.null(terra::intersect(terra::ext(IAS_highways_CRS), terra::ext(DSM_original)))) {
-      stop("The selected sewer drainage layer features do not overlap the DSM extent.")
-    }
-    
-
-    # Step 9: Rasterize highways network and add to DSM
-    DSM_extent <- terra::rast(DSM_original)
-    rasterized_highways_net <- terra::rasterize(IAS_highways_CRS, DSM_extent, field = "new_field")
-    
-    # Combine the rasterized highway network with the existing DSM layer
-    DSM_river_highways <- terra::mosaic(rasterized_river_net, rasterized_highways_net, fun = "last", overwrite = TRUE)
-    DSM_River_highways_burn <- terra::mosaic(DSM_original, DSM_river_highways, fun = "last", overwrite = TRUE)
-    
-    # Step 10: Save final raster
-    default_output <- file.path(Sys.getenv("HOME"), "rivers_highways_mosaic.tif")
-    
-    repeat {
-      save_rivers_highways <- rstudioapi::selectFile(
-        caption = "Specify the save location and file name for the rasterized drainage data not draining to the combined network layer (must end with .tif).",
-        path = default_output,
-        label = "Save As",
-        existing = FALSE,
-        filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff"
+      
+    } else if (geom_type %in% c("polygons")) {
+      
+      svDialogs::dlgMessage(
+        "Polygon geometry detected — skipping buffering step.",
+        type = "ok"
       )
       
-      if (is.null(save_rivers_highways) || save_rivers_highways == "") {
-        stop("Operation aborted by the user. No save location selected.")
-      } else if (grepl("\\.tif$", save_rivers_highways, ignore.case = TRUE)) {
-        break
-      } else {
-        showDialog("Invalid Input", "Please ensure the file name ends with '.tif'.")
-      }
+    } else {
+      
+      svDialogs::dlgMessage(
+        paste("Unknown geometry type detected:", geom_type, "- proceeding without buffer."),
+        type = "ok"
+      )
+      
     }
     
-    terra::writeRaster(DSM_River_highways_burn, save_rivers_highways, overwrite = TRUE)
-    DSM_minus_rivers_highways <- terra::rast(save_rivers_highways)
+    # Rasterize highways
+    IAS_highways_filtered$new_field <- 10000
+    rasterized_highways_net <- terra::rasterize(IAS_highways_filtered, DSM_original, field = "new_field")
+    
+    # Burn into DSM
+    DSM_minus_rivers_highways <- terra::mosaic(DSM_minus_rivers, rasterized_highways_net, fun = "last")
+    
+   # tcltk::tkmessageBox(
+    #  title = "Highways Edit Complete",
+    #  message = "Highways removal completed successfully.",
+     # icon = "info",
+     # type = "ok"
+   # )
+    
     dlgMessage("The removal of the drainage data not draining to the combined network from the DSM has been completed successfully.", type = "ok")
     
-    break  # Exit the loop after completing the section
+    break
   }
 }
 
-###############################################################################################################################################################################
+
+################################################################################################
 ### Create Combined Sewer Pour Point ###
-## Inform user what the next step is ##
+
+## Inform user of next step
 dlgMessage("The next step will allow the user to create a pour point layer from the Sewer Drainage data. The pour point layer will be created using the combined sewer data", type = "ok")
 
-# Define the new shapefile path
-new_shapefile_path5 <- file.path(tempdir(), "copy_of_IAS.shp")
-
-# Write the shapefile to the temporary directory
-terra::writeVector(IAS_original, new_shapefile_path5, overwrite = TRUE)  # overwrite = TRUE allows files to be overwritten
+# Step 1: Copy sewer data into temp directory
+new_shapefile_path5 <- file.path(tempdir(), "copy_of_IAS.gpkg")
+terra::writeVector(IAS_original, new_shapefile_path5, filetype = "GPKG", overwrite = TRUE)
 copied_IAS <- st_read(new_shapefile_path5)
 
+# Convert to sf and terra objects
 IAS_sf <- st_as_sf(copied_IAS)
+input_vector <- terra::vect(IAS_sf)
 
-# Step 1: Prompt the user to select an attribute from the shapefile
-attribute_options <- colnames(as.data.frame(IAS_sf))
+# Step 2: Attribute selection
+attribute_options <- colnames(as.data.frame(input_vector))
+selected_attribute <- tcltk::tk_select.list(attribute_options, multiple = FALSE, title = "Select Attribute")
+if (length(selected_attribute) == 0 || selected_attribute == "") stop("No attribute selected. Operation aborted.")
 
-# Add index numbers to each attribute option
-attribute_options_with_index <- paste(1:length(attribute_options), attribute_options, sep = ": ")
-
-repeat {
-  selected_index <- showPrompt(
-    title = "Select an Attribute by Number", 
-    message = paste("Available attributes:\n", paste(attribute_options_with_index, collapse = "\n"),
-                    "\nPlease enter the number corresponding to your choice."),
-    default = "1"  # Suggest the first attribute as the default
-  )
-  
-  selected_index <- as.numeric(selected_index)
-  
-  if (!is.na(selected_index) && selected_index >= 1 && selected_index <= length(attribute_options)) {
-    selected_attribute <- attribute_options[selected_index]  # Get the selected attribute by index
-    confirm_selection <- showPrompt(
-      title = "Confirm Selection",
-      message = paste("You selected the attribute:\n", selected_attribute, 
-                      "\nType 'Yes' to confirm, or 'No' to go back and reselect."),
-      default = "Yes"
-    )
-    
-    if (tolower(confirm_selection) == "yes") {
-      showDialog(
-        title = "Attribute Selected", 
-        message = paste("You have confirmed the selection of the attribute:\n", selected_attribute)
-      )
-      break  # Exit the loop if confirmed
-    } else if (tolower(confirm_selection) == "no") {
-      showDialog(
-        title = "Selection Cancelled", 
-        message = "Please reselect an attribute."
-      )
-    } else {
-      showDialog(
-        title = "Invalid Input", 
-        message = "Invalid input. Please type 'Yes' to confirm or 'No' to cancel."
-      )
-    }
-  } else {
-    showDialog(
-      title = "Invalid Selection", 
-      message = "The entered number is not valid. Please try again."
-    )
-  }
-}
-
-# Step 2: Extract the unique values from the selected attribute
+# Step 3: Value selection
 unique_values <- unique(as.data.frame(copied_IAS)[[selected_attribute]])
+selected_values <- tcltk::tk_select.list(unique_values, multiple = TRUE, title = paste("Select Values for", selected_attribute))
+if (length(selected_values) == 0) stop("No values selected. Operation aborted.")
 
-# Step 3: Display the unique values and allow the user to select one or more values
-values_with_index <- paste(1:length(unique_values), unique_values, sep = ": ")
-repeat {
-  selected_values_input <- showPrompt(
-    title = "Select Values by Number", 
-    message = paste("Available values for attribute", selected_attribute, ":\n", 
-                    paste(values_with_index, collapse = "\n"),
-                    "\nPlease enter the numbers corresponding to the values you want to select (comma-separated e.g. 1, 2, 3)."),
-    default = "1"  # Suggest the first value as the default
-  )
-  
-  selected_values_indices <- as.numeric(unlist(strsplit(selected_values_input, ",")))
-  if (all(!is.na(selected_values_indices) & selected_values_indices >= 1 & selected_values_indices <= length(unique_values))) {
-    selected_values <- unique_values[selected_values_indices]
-    
-    confirm_values <- showPrompt(
-      title = "Confirm Selected Values",
-      message = paste("You selected the following values:\n", paste(selected_values, collapse = ", "),
-                      "\nType 'Yes' to confirm, or 'No' to go back and reselect."),
-      default = "Yes"
-    )
-    
-    if (tolower(confirm_values) == "yes") {
-      showDialog(
-        title = "Values Selected", 
-        message = paste("You have confirmed the selection of the values:\n", paste(selected_values, collapse = ", "))
-      )
-      break  # Exit the loop if confirmed
-    } else if (tolower(confirm_values) == "no") {
-      showDialog(
-        title = "Selection Cancelled", 
-        message = "Please reselect values."
-      )
-    } else {
-      showDialog(
-        title = "Invalid Input", 
-        message = "Invalid input. Please type 'Yes' to confirm or 'No' to cancel."
-      )
-    }
-  } else {
-    showDialog(
-      title = "Invalid Selection", 
-      message = "The entered numbers are not valid. Please try again."
-    )
-  }
-}
-
-# Step 4: Filter the sewer drainage layer based on the selected values
+# Step 4: Filter sewer drainage layer
 IAS_sewer_sf <- copied_IAS %>%
   filter(as.character(.data[[selected_attribute]]) %in% as.character(selected_values))
 
-# Check for empty result
 if (nrow(IAS_sewer_sf) == 0) {
   stop(paste0("No features found in Sewer Drainage data for ", selected_attribute, " = ",
               paste(selected_values, collapse = ", "),
               ". Please select a value that exists within the DSM extent."))
 }
 
-# Convert to terra object
+# Step 5: Convert to terra object & match CRS
 IAS_sewer_filtered <- terra::vect(IAS_sewer_sf)
 
-# Reproject to DSM CRS if needed
-if (terra::crs(IAS_sewer_filtered) != terra::crs(DSM_original)) {
-  IAS_sewer_filtered <- terra::project(IAS_sewer_filtered, terra::crs(DSM_original))
-}
-
-# Check for spatial overlap
-if (is.null(terra::intersect(terra::ext(IAS_sewer_filtered), terra::ext(DSM_original)))) {
-  stop("The selected Sewer Drainage data features do not overlap the DSM extent.")
-}
-
-
-# Add a new field called 'new_field' and populate it with 1
-IAS_sewer_filtered$new_field <- 1
-
-# Rasterize to DSM grid with NA background
-DSM_extent <- terra::rast(DSM_original)
-rasterized_sewer_net <- terra::rasterize(IAS_sewer_filtered, DSM_extent,
-                                         field = "new_field", background = NA)
-
-# Step 5: Convert to terra object
-IAS_sewer_filtered <- terra::vect(IAS_sewer_sf)
-
-# Step 6: Write filtered shapefile
-new_shapefile_path6 <- file.path(tempdir(), "filtered_IAS_sewer.shp")
-terra::writeVector(IAS_sewer_filtered, new_shapefile_path6, overwrite = TRUE)
-
-# Step 7: Check if CRS is the same, and transform polygon if necessary
 if (terra::crs(IAS_sewer_filtered) != terra::crs(DSM_original)) {
   IAS_sewer_CRS <- terra::project(IAS_sewer_filtered, terra::crs(DSM_original))
 } else {
   IAS_sewer_CRS <- IAS_sewer_filtered
 }
 
-# Check for spatial overlap
+# Check for overlap
 if (is.null(terra::intersect(terra::ext(IAS_sewer_CRS), terra::ext(DSM_original)))) {
   stop("The selected Sewer Drainage data features do not overlap the DSM extent.")
 }
 
-# Auto-detect geometry type and optionally buffer
+# Step 6: Add 'new_field'
+IAS_sewer_CRS$new_field <- 1
+
+# Step 7: Buffer if needed
 geom_type <- tolower(unique(terra::geomtype(IAS_sewer_CRS))[1])
 
-if (geom_type %in% c("polygons")) {
-  dlgMessage("Polygon geometry detected — skipping buffering step.", type = "ok")
-} else if (geom_type %in% c("lines", "points")) {
-  buffer_choice <- tolower(showPrompt(
-    title = "Buffer Option",
-    message = paste0("The Sewer Drainage data layer contains ", geom_type, 
-                     ". Do you want to apply a buffer before rasterizing? (Yes/No)"),
-    default = "Yes"
-  ))
+if (geom_type %in% c("lines", "points")) {
+  buffer_choice <- tolower(svDialogs::dlgMessage(
+    paste0("The Sewer Drainage data layer contains ", geom_type, 
+           ". Do you want to apply a buffer before rasterizing?"),
+    type = "yesno"
+  )$res)
   
   if (buffer_choice == "yes") {
-    buffer_input <- as.numeric(dlgInput(
+    buffer_input <- as.numeric(svDialogs::dlgInput(
       paste0("Enter buffer distance in map units (default = 3):"),
       default = "3"
     )$res)
-    
-    if (is.na(buffer_input) || buffer_input <= 0) {
-      buffer_input <- 3
-    }
+    if (is.na(buffer_input) || buffer_input <= 0) buffer_input <- 3
     
     IAS_sewer_CRS <- terra::buffer(IAS_sewer_CRS, width = buffer_input)
-    dlgMessage(paste("Buffered", geom_type, "by", buffer_input, "map units."), type = "ok")
+    svDialogs::dlgMessage(paste("Buffered", geom_type, "by", buffer_input, "map units."), type = "ok")
   } else {
-    dlgMessage("No buffer applied.", type = "ok")
+    svDialogs::dlgMessage("No buffer applied.", type = "ok")
   }
+  
+} else if (geom_type %in% c("polygons")) {
+  svDialogs::dlgMessage("Polygon geometry detected — skipping buffering step.", type = "ok")
 } else {
-  dlgMessage(paste("Unknown geometry type detected:", geom_type, "- proceeding without buffer."), type = "ok")
+  svDialogs::dlgMessage(paste("Unknown geometry type detected:", geom_type, "- proceeding without buffer."), type = "ok")
 }
 
-# Add a new field called 'new_field' and populate it with 1
-IAS_sewer_CRS$new_field <- 1
-
-# Write the updated shapefile back to the temporary directory
-new_shapefile_path7 <- file.path(tempdir(), "sewer_IAS2.shp")
-terra::writeVector(IAS_sewer_CRS, new_shapefile_path7, overwrite = TRUE)
-
-
-
-# Step 8: Rasterize sewer network and add to DSM
+# Step 8: Rasterize
 DSM_extent <- terra::rast(DSM_original)
-rasterized_sewer_net <- terra::rasterize(IAS_sewer_CRS, DSM_extent, field = "new_field")
+rasterized_sewer_net <- terra::rasterize(IAS_sewer_CRS, DSM_extent, field = "new_field", background = NA)
 
-# Step 9: Set up prompt for save location
-# Set a default output file path
-default_output <- file.path(Sys.getenv("HOME"), "rasterised_sewer_network.tif")
+# Step 9: Save filtered shapefile
+new_shapefile_path6 <- file.path(tempdir(), "filtered_IAS_sewer.gpkg")
+terra::writeVector(IAS_sewer_CRS, new_shapefile_path6, filetype = "GPKG", overwrite = TRUE)
 
-# Start a repeat loop to ensure a valid save location
+# Step 10: Prompt for save location
+default_output2 <- file.path(default_dir, "rasterised_sewer_network.tif")
+
 repeat {
-  # Open a file save dialog using rstudioapi
   save_rasterised_sewer_net <- rstudioapi::selectFile(
     caption = paste(
       "Specify the location and filename for the rasterized combined sewer network.",
       "\nIt must include .tif at the end of the file name.",
-      "\n(Default suggestion:", default_output, ")"
+      "\n(Default suggestion:", default_output2, ")"
     ),
-    path = default_output,  # Provide a default suggestion
+    path = default_output2,
     label = "Save As",
-    existing = FALSE,        # Allow creating a new file
+    existing = FALSE,
     filter = "TIFF files (*.tif;*.tiff)|*.tif;*.tiff"
   )
   
-  # Check if the user cancels the dialog
   if (is.null(save_rasterised_sewer_net) || save_rasterised_sewer_net == "") {
     stop("Operation aborted by the user. No save location selected.")
   } else if (grepl("\\.tif$", save_rasterised_sewer_net, ignore.case = TRUE)) {
-    # If the file name ends with '.tif', exit the loop
     rstudioapi::showDialog("File Selected", paste("File will be saved to:\n", save_rasterised_sewer_net))
     break
   } else {
-    # If the file name does not end with '.tif', show a warning
     rstudioapi::showDialog("Invalid Input", "Invalid input. Please ensure the file name ends with '.tif'.")
   }
 }
 
-# Save the reclassified raster to a new file
+# Step 11: Save raster
 pour_point_sewer <- terra::writeRaster(rasterized_sewer_net, save_rasterised_sewer_net, overwrite = TRUE)
 
-# Confirmation message
+# Confirmation
 dlgMessage("The pour point layer has been generated successfully.", type = "ok")
+
 
 ########################################################################################################################################################
 ############################################# Whitebox tools ##################################################################################
@@ -836,9 +614,11 @@ dlgMessage("The pour point layer has been generated successfully.", type = "ok")
 dlgMessage("The next step will fill the DEM. Filling refers to the removal of small imprefections in a DEM by filling in sinks and peaks.", type = "ok")
 
 ### Fill DEM using Whitebox ###
+#default_dir <- getwd()
+
 ## set up default output ##
 ## set up prompt for user to save the fill output 
-default_output <- file.path(Sys.getenv("HOME"), "DEM_Fill.tif")
+default_output <- file.path(default_dir, "DEM_Fill.tif")
 
 # Start a repeat loop to ensure a valid save location
 repeat {
@@ -884,19 +664,15 @@ if (is.na(set_zlimit)) {
 }
 
 ### define the DEM to be used if the section to remove highways is skipped or not skipped
-# Define a default raster for when the section is skipped
-default_DSM <- DSM_minus_rivers  # Replace this with the appropriate raster if necessary
+final_DEM <- DSM_minus_rivers_highways
 
-# Use a conditional check to assign DSM_minus_rivers_highways
-if (exists("DSM_minus_rivers_highways")) {
-  final_DEM <- DSM_minus_rivers_highways
-} else {
-  final_DEM <- default_DSM
-}
+# Write final_DEM to a temp file
+temp_final_DEM_path <- file.path(tempdir(), "final_DEM.tif")
+terra::writeRaster(final_DEM, temp_final_DEM_path, overwrite = TRUE) 
 
 ## Call the Whitebox function to fill depressions using the user-specified zlimit
 wbt_fill_depressions(
-  dem = final_DEM,
+  dem = temp_final_DEM_path,
   output = output_filled_DSM_rivers_highways_burn,
   fix_flats = TRUE,
   max_depth = set_zlimit
@@ -952,7 +728,7 @@ repeat {
       
       ### Flow Direction ###
       # Prompt the user for the save location for flow direction output
-      default_output <- file.path(Sys.getenv("HOME"), "flow_direction_Dinf.tif")
+      default_output <- file.path(default_dir, "flow_direction_Dinf.tif")
       repeat {
         save_flow_direction <- rstudioapi::selectFile(
           caption = paste(
@@ -984,7 +760,7 @@ repeat {
       dlgMessage("Flow direction layer successfully generated.", type = "ok")
       
       ### Flow Accumulation ###
-      default_output <- file.path(Sys.getenv("HOME"), "flow_accumulation_Dinf.tif")
+      default_output <- file.path(default_dir, "flow_accumulation_Dinf.tif")
       repeat {
         save_flow_accumulation <- rstudioapi::selectFile(
           caption = paste(
@@ -1016,7 +792,7 @@ repeat {
       dlgMessage("Flow accumulation layer successfully generated.", type = "ok")
       
       ### Flow Distance ###
-      default_output <- file.path(Sys.getenv("HOME"), "flow_distance_Dinf.tif")
+      default_output <- file.path(default_dir, "flow_distance_Dinf.tif")
       repeat {
         save_flow_distance <- rstudioapi::selectFile(
           caption = paste(
@@ -1053,7 +829,7 @@ repeat {
       repeat {
         skip_save_polygon <- tolower(showPrompt(
           title = "Skip Polygon Save",
-          message = "Do you want to skip saving the flow distance as a polygon shapefile?\nType 'Yes' to skip or 'No' to proceed.",
+          message = "Do you want to skip saving the flow distance as a polygon?\nType 'Yes' to skip or 'No' to proceed.",
           default = "No"
         ))
         
@@ -1062,27 +838,27 @@ repeat {
           break
         } else if (skip_save_polygon == "no") {
           # Convert flow distance raster to shapefile
-          default_output <- file.path(Sys.getenv("HOME"), "flow_distance_polygon.shp")
+          default_output <- file.path(default_dir, "flow_distance_polygon.gpkg")
           repeat {
             save_flow_distance_poly <- rstudioapi::selectFile(
               caption = paste(
-                "Select save location for the flow distance polygon shapefile.",
-                "\nFile name must end with .shp.",
+                "Select save location for the flow distance polygon, file name must end in .gpkg",
+                "\nFile name must end with .gpkg",
                 "\n(Default suggestion:", default_output, ")"
               ),
               path = default_output,
               label = "Save As",
               existing = FALSE,
-              filter = "Shapefiles (*.shp)|*.shp"
+              filter = "GeoPackage (*.gpkg)|*.gpkg"
             )
             
             if (is.null(save_flow_distance_poly) || save_flow_distance_poly == "") {
               stop("Operation aborted by the user. No save location selected.")
-            } else if (grepl("\\.shp$", save_flow_distance_poly, ignore.case = TRUE)) {
+            } else if (grepl("\\.gpkg$", save_flow_distance_poly, ignore.case = TRUE)) {
               rstudioapi::showDialog("File Selected", paste("File will be saved to:\n", save_flow_distance_poly))
               break
             } else {
-              rstudioapi::showDialog("Invalid Input", "File name must end with '.shp'. Please try again.")
+              rstudioapi::showDialog("Invalid Input", "File name must end with '.gpkg'. Please try again.")
             }
           }
           
@@ -1092,7 +868,7 @@ repeat {
           flow_dis_rast2 <- (flow_dis_raster * 0)+1
           
           flow_distance_polygon <- terra::as.polygons(flow_dis_rast2, dissolve = TRUE)
-          terra::writeVector(flow_distance_polygon, save_flow_distance_poly, overwrite = TRUE)
+          terra::writeVector(flow_distance_polygon, save_flow_distance_poly, filetype = "GPKG", overwrite = TRUE)
           dlgMessage("Polygon shapefile successfully saved.", type = "ok")
           break
         } else {
@@ -1155,7 +931,7 @@ repeat {
       )
       
       ### Flow Direction ###
-      default_output <- file.path(Sys.getenv("HOME"), "flow_direction_D8.tif")
+      default_output <- file.path(default_dir, "flow_direction_D8.tif")
       repeat {
         save_flow_direction_D8 <- rstudioapi::selectFile(
           caption = paste(
@@ -1185,7 +961,7 @@ repeat {
       dlgMessage("Flow direction layer successfully generated.", type = "ok")
       
       ### Flow Accumulation ###
-      default_output <- file.path(Sys.getenv("HOME"), "flow_accumulation_D8.tif")
+      default_output <- file.path(default_dir, "flow_accumulation_D8.tif")
       repeat {
         save_flow_accumulation_D8 <- rstudioapi::selectFile(
           caption = paste(
@@ -1215,7 +991,7 @@ repeat {
       dlgMessage("Flow accumulation layer successfully generated.", type = "ok")
       
       ### D8 Watershed ###
-      default_output <- file.path(Sys.getenv("HOME"), "Watershed_d8.tif")
+      default_output <- file.path(default_dir, "Watershed_d8.tif")
       repeat {
         save_watershed_d8 <- rstudioapi::selectFile(
           caption = paste(
@@ -1245,11 +1021,11 @@ repeat {
       )
       dlgMessage("Watershed layer successfully generated.", type = "ok")
       
-      ### Optional Shapefile Conversion ###
+      ############ Optional Shapefile Conversion #########################################################################################
       repeat {
         skip_save_polygon <- tolower(showPrompt(
           title = "Skip Polygon Save",
-          message = "Do you want to skip saving the D8 watersheds as a polygon shapefile?\nType 'Yes' to skip or 'No' to proceed.",
+          message = "Do you want to skip saving the D8 watersheds as a polygon?\nType 'Yes' to skip or 'No' to proceed.",
           default = "No"
         ))
         
@@ -1258,34 +1034,34 @@ repeat {
           break
         } else if (skip_save_polygon == "no") {
           # Convert flow distance raster to shapefile
-          default_output <- file.path(Sys.getenv("HOME"), "Watershed_D8_polygon.shp")
+          default_output <- file.path(default_dir, "Watershed_D8_polygon.gpkg")
           repeat {
             save_flow_distance_poly <- rstudioapi::selectFile(
               caption = paste(
-                "Select save location for the flow distance polygon shapefile.",
-                "\nFile name must end with .shp.",
+                "Select save location for the flow distance polygon, file name must end in .gpkg",
+                "\nFile name must end with .gpkg.",
                 "\n(Default suggestion:", default_output, ")"
               ),
               path = default_output,
               label = "Save As",
               existing = FALSE,
-              filter = "Shapefiles (*.shp)|*.shp"
+              filter = "GeoPackage (*.gpkg)|*.gpkg"
             )
             
             if (is.null(save_flow_distance_poly) || save_flow_distance_poly == "") {
               stop("Operation aborted by the user. No save location selected.")
-            } else if (grepl("\\.shp$", save_flow_distance_poly, ignore.case = TRUE)) {
+            } else if (grepl("\\.gpkg$", save_flow_distance_poly, ignore.case = TRUE)) {
               rstudioapi::showDialog("File Selected", paste("File will be saved to:\n", save_flow_distance_poly))
               break
             } else {
-              rstudioapi::showDialog("Invalid Input", "File name must end with '.shp'. Please try again.")
+              rstudioapi::showDialog("Invalid Input", "File name must end with '.gpkg'. Please try again.")
             }
           }
           
           # Save the shapefile
           watershed_raster <- terra::rast(save_watershed_d8)
           Watershed_polygon <- terra::as.polygons(watershed_raster, dissolve = TRUE)
-          terra::writeVector(Watershed_polygon, save_flow_distance_poly, overwrite = TRUE)
+          terra::writeVector(Watershed_polygon, save_flow_distance_poly, filetype = "GPKG", overwrite = TRUE)
           dlgMessage("Polygon shapefile successfully saved.", type = "ok")
           break
         } else {
